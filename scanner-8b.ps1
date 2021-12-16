@@ -10,9 +10,22 @@
     usrMitigate   (Y/N/X): ternary option to enable/disable 2.10+ mitigation (or do nothing). https://twitter.com/CyberRaiju/status/1469505680138661890
 #>
 
+[CmdletBinding()]
+param (
+    [Int16]
+    $usrScanscope,
+    [bool]
+    $usrUpdateDefs,
+    [string]
+    $usrMitigate
+)
+
 [string]$varch=[intPtr]::Size*8
 $script:varDetection=0
 $varEpoch=[int][double]::Parse((Get-Date -UFormat %s))
+
+# Don't want to max out the system, so let's find half of the available threads
+$maxThreads = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors / 2
 
 write-host "Log4j/Log4Shell CVE-2021-44228 Scanning/Mitigation Tool (seagull/Datto)"
 write-host "======================================================================="
@@ -31,7 +44,7 @@ if (test-path "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt" -ErrorAction Sile
 }
 
 #did the user turn NOLOOKUPS (2.10+ mitigation) on?
-switch ($env:usrMitigate) {
+switch ($usrMitigate) {
     'Y' {
         if ([System.Environment]::GetEnvironmentVariable('LOG4J_FORMAT_MSG_NO_LOOKUPS','machine') -eq 'true') {
             write-host "- Log4j 2.10+ exploit mitigation (LOG4J_FORMAT_MSG_NO_LOOKUPS) already set."
@@ -49,7 +62,7 @@ switch ($env:usrMitigate) {
 }
 
 #map input variable usrScanScope to an actual value
-switch ($env:usrScanScope) {
+switch ($usrScanScope) {
     1   {
         write-host "- Scan scope: Home Drive"
         $script:varDrives=@($env:HomeDrive)
@@ -70,7 +83,7 @@ switch ($env:usrScanScope) {
 }
 
 #if user opted to update yara rules, do that
-if ($env:usrUpdateDefs -match 'true') {
+if ($usrUpdateDefs -match 'true') {
     [Net.ServicePointManager]::SecurityProtocol = [Enum]::ToObject([Net.SecurityProtocolType], 3072)
     $varYaraNew=(new-object System.Net.WebClient).DownloadString('https://github.com/Neo23x0/signature-base/raw/master/yara/expl_log4j_cve_2021_44228.yar')
     #quick verification check
@@ -154,7 +167,7 @@ foreach ($file in $arrFiles) {
 
         #scan it
         clear-variable yaResult -ErrorAction SilentlyContinue
-        $yaResult=cmd /c "yara$varch.exe `"yara.yar`" `"$file`" -s"
+        $yaResult=cmd /c "yara$varch.exe `"yara.yar`" `"$file`" -s --threads=$maxThreads"
         if ($yaResult) {
             #sound an alarm
             write-host "====================================================="

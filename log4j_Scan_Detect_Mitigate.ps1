@@ -43,6 +43,9 @@ $osArch = Get-WmiObject win32_operatingsystem | Select-Object -ExpandProperty OS
 $yaraDir = $env:windir + '\LTSVc\utilities\yara'
 $yaraZip = $yaraDir + '\yara.zip'
 $yaraExe = $yaraDir + '\yara32.exe'
+$yaraYar = $yaraDir + '\yara.yar'
+$outputLog = $yaraDir + '\log4jScanLogs.txt'
+$detectionLog = $yaraDir + '\DETECTION_log4jScanLogs.txt'
 
 
 # Set the download URL of the yara zip file
@@ -71,6 +74,7 @@ try {
     $output += "Successfully downloaded the yara utility"
 } catch {
     $output += "Failed to download the yara utility, exiting script. Full error output: $Error"
+    $output = $output -join "`n"
     return $output
 }
 
@@ -81,6 +85,7 @@ try {
     [System.IO.Compression.ZipFile]::ExtractToDirectory($yaraZip,$yaraDir)
 } catch {
     $output += "Failed to unzip yara. Full error output: $Error"
+    $output = $output -join "`n"
     return $output
 }
 
@@ -94,17 +99,17 @@ $output += "Log4j/Log4Shell CVE-2021-44228 Scanning/Mitigation Tool (DKB/seagull
 $output += "======================================================================="
 if ($CS_CC_HOST) {
     $output += "Set up a File/Folder Size Monitor against devices"
-    $output += "(File/s named $env:PROGRAMDATA\CentraStage\L4Jdetections.txt : is over : 0MB)"
+    $output += "(File/s named $detectionLog : is over : 0MB)"
     $output += "to alert proactively if this Component reports signs of infection."
     $output += "======================================================================="
 }
 
 
 # Is there already a detections.txt file?
-if ((Test-Path "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt" -ErrorAction SilentlyContinue)) {
-    Rename-Item -Path "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt" "$env:PROGRAMDATA\CentraStage\$varEpoch-L4Jdetections.txt" -Force
-    $output += "- An existing L4JDetections.txt file was found. It has been renamed to:"
-    $output += "$varEpoch-L4JDetections.txt"
+if ((Test-Path $detectionLog -ErrorAction SilentlyContinue)) {
+    Rename-Item -Path $detectionLog "$yaraDir\$varEpoch-DETECTION_log4jScanLogs.txt" -Force
+    $output += "- An existing DETECTION_log4jScanLogs.txt file was found. It has been renamed to:"
+    $output += "$varEpoch-DETECTION_log4jScanLogs.txt"
 }
 
 # Did the user turn NOLOOKUPS (2.10+ mitigation) on?
@@ -154,15 +159,15 @@ if ($updateDefs) {
     $varYaraNew = (New-Object System.Net.WebClient).DownloadString('https://github.com/Neo23x0/signature-base/raw/master/yara/expl_log4j_cve_2021_44228.yar')
     # Quick verification check
     if ($varYaraNew -match 'TomcatBypass') {
-        Set-Content -Value $varYaraNew -Path yara.yar -Force
+        Set-Content -Value $varYaraNew -Path $yaraYar -Force
         $output += "- New YARA definitions downloaded."
     } else {
         $output += "!ERROR: New YARA definition download failed."
         $output += "Falling back to built-in definitions."
-        Copy-Item -Path expl_log4j_cve_2021_44228.yar -Destination yara.yar -Force
+        Copy-Item -Path expl_log4j_cve_2021_44228.yar -Destination $yaraYar -Force
     }
 } else {
-    Copy-Item -Path expl_log4j_cve_2021_44228.yar -Destination yara.yar -Force
+    Copy-Item -Path expl_log4j_cve_2021_44228.yar -Destination $yaraYar -Force
     $output += "- Not downloading new YARA definitions."
 }
 
@@ -172,10 +177,10 @@ cmd /c "$yaraExe -v >nul 2>&1"
 
 
 # Start a logfile
-Set-Content -Path "log.txt" -Force -Value "Files scanned:"
-Add-Content "log.txt" -Value "Please expect some permissions errors as some locations are forbidden from traversal."
-Add-Content "log.txt" -Value "====================================================="
-Add-Content "log.txt" -Value " :: Scan Started: $(Get-Date) ::"
+Set-Content -Path $outputLog -Force -Value "Files scanned:"
+Add-Content $outputLog -Value "Please expect some permissions errors as some locations are forbidden from traversal."
+Add-Content $outputLog -Value "====================================================="
+Add-Content $outputLog -Value " :: Scan Started: $(Get-Date) ::"
 
 
 # Get a list of all files-of-interest on the device (depending on scope) :: GCI is broken; permissions errors when traversing root dirs cause aborts (!!!)
@@ -195,10 +200,10 @@ $output += "- Scanning for JAR files containing potentially insecure Log4j code.
 $arrFiles | Where-Object {$_ -match '\.jar$'} | ForEach-Object {
     if (select-string -Quiet -Path $_ "JndiLookup.class") {
         $output += "!ALERT: Potentially vulnerable file at $($_)!"
-        if (!(Test-Path "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt" -ErrorAction SilentlyContinue)) {
-            Set-Content -Path "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt" -Value "!CAUTION !`r`n$(Get-Date)"
+        if (!(Test-Path $detectionLog -ErrorAction SilentlyContinue)) {
+            Set-Content -Path $detectionLog -Value "!CAUTION !`r`n$(Get-Date)"
         }
-        Add-Content "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt" -Value "POTENTIALLY VULNERABLE JAR: $($_)"
+        Add-Content $detectionLog -Value "POTENTIALLY VULNERABLE JAR: $($_)"
         $varDetection = 1
     }
 }
@@ -208,20 +213,20 @@ $arrFiles | Where-Object {$_ -match '\.jar$'} | ForEach-Object {
 $output += "====================================================="
 $output += "- Scanning LOGs, TXTs and JARs for common attack strings via YARA scan......"
 foreach ($file in $arrFiles) {
-    if ($file -match 'CentraStage' -or $file -match 'L4Jdetections\.txt') {
+    if ($file -match 'CentraStage' -or $file -match 'DETECTION_log4jScanLogs\.txt') {
         #do nothing -- this isn't a security threat; we're looking at the pathname of the log, not the contents
     } else {
         #add it to the logfile, with a pause for handling
         try {
-            Add-Content "log.txt" -Value $file -ErrorAction Stop
+            Add-Content $outputLog -Value $file -ErrorAction Stop
         } catch {
             Start-Sleep -Seconds 1
-            Add-Content "log.txt" -Value $file -ErrorAction SilentlyContinue
+            Add-Content $outputLog -Value $file -ErrorAction SilentlyContinue
         }
 
         # Scan it
         Clear-Variable yaResult -ErrorAction SilentlyContinue
-        $yaResult=cmd /c "yara$varch.exe `"yara.yar`" `"$file`" -s --threads=$maxThreads"
+        $yaResult = cmd /c "$yaraExe `"$yaraYar`" `"$file`" -s --threads=$maxThreads"
         if ($yaResult) {
             # Sound an alarm
             $output += "====================================================="
@@ -229,23 +234,23 @@ foreach ($file in $arrFiles) {
             $output += "!DETECTION:"
             $output += $yaResult
             # Write to a file
-            if (!(Test-Path "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt" -ErrorAction SilentlyContinue)) {
-                Set-Content -Path "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt" -Value "!INFECTION DETECTION !`r`n$(Get-Date)"
+            if (!(Test-Path $detectionLog -ErrorAction SilentlyContinue)) {
+                Set-Content -Path $detectionLog -Value "!INFECTION DETECTION !`r`n$(Get-Date)"
             }
-            Add-Content "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt" -Value $yaResult
+            Add-Content $detectionLog -Value $yaResult
         }
     }
 }
 
 
-Add-Content "log.txt" -Value " :: Scan Finished: $(Get-Date) ::"
+Add-Content $outputLog -Value " :: Scan Finished: $(Get-Date) ::"
 
 
 if ($varDetection -eq 1) {
     $output += "====================================================="
     $output += "!Evidence of one or more Log4Shell attack attempts has been found on the system."
     $output += "The location of the files demonstrating this are noted in the following log:"
-    $output += "$env:PROGRAMDATA\CentraStage\L4Jdetections.txt"
+    $output += $detectionLog
 } else {
     $output += "- There is no indication that this system has received Log4Shell attack attempts ."
 }
@@ -254,3 +259,7 @@ if ($varDetection -eq 1) {
 $output += "Datto recommends that you follow best practices with your systems by implementing WAF rules,"
 $output += "mitigation and remediation recommendations from your vendors. For more information on Datto's"
 $output += "response to the log4j vulnerabilty, please refer to https://www.datto.com/blog/dattos-response-to-log4shell."
+
+
+$output = $output -join "`n"
+$output

@@ -1,20 +1,25 @@
 Function Test-log4jVulnerability {
     <#
-        Log4j Vulnerability (CVE-2021-44228) file scanner [windows] :: build 8b/seagull
-        Uses Florian Roth and Jai Minton's research (thank you!)
-        RELEASED PUBLICLY for all MSPs, originally a Datto RMM ComStore Component.
-        if you use code from this script, please credit Datto & seagull.
+        .Description
+        Seaches machine for JAR files, scans JAR files with the yar vulnerability scanner tool,
+        reports vulnerabilities if present, reports exploit if found, and applies mitigation
+        if mitigation applied is set at function call.
 
-        The acceptable values for env:scanScope are:
+        .Parameter scanScope
         1: Scan files on Home Drive
         2: Scan files on fixed and removable drives
         3: Scan files on all detected drives, even network drives
 
+        .Parameter mitigationAction
+        Available Values:
 
-        USER VARIABLES:
-        scanScope  (1/2/3): just home drive / all fixed drives / all drives
-        updateDefs (bool):  download the latest yara definitions from florian?
-        mitigationAction   (Y/N/X): ternary option to enable/disable 2.10+ mitigation (or do nothing). https://twitter.com/CyberRaiju/status/1469505680138661890
+        Mitigate: Apply mitigation
+        Reverse: Reverse mitigation
+        None: Take no mitigation actions
+
+
+        Credits
+        Initial script concept and testing credit to Datto & seagull
     #>
 
     [CmdletBinding()]
@@ -26,7 +31,10 @@ Function Test-log4jVulnerability {
         [ValidateSet( 1,2,3 )]
         [Int16]$scanScope,
 
-        [Parameter  ( Mandatory = $true )]
+        [Parameter  ( 
+            Mandatory = $true,
+            HelpMessage = "Mitigate: Apply mitigation, Reverse: Reverse mitigation, None: Take no mitigation actions"
+        )]
         [ValidateSet( 'Mitigate','Reverse','None' )]
         [string]$mitigationAction
     )

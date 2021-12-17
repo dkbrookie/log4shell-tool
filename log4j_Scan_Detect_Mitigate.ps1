@@ -248,7 +248,8 @@ Function Test-log4jVulnerability {
         $output += "====================================================="
         $output += "!EVIDENCE of one or more Log4Shell vulnerabilities and possible exploit has been found on the system."
         $output += "The location of the files demonstrating this are noted in the following log:"
-        $output += $detectionLog
+        $output += "See last 50 lines of logged evidence below, and see the full local output at $detectionLog"
+        $output += Get-Content -Path $detectionLog -Tail 50
     } else {
         $output += "- There is no indication that this system has received Log4Shell attack attempts ."
     }

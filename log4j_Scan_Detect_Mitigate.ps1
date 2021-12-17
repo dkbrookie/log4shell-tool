@@ -58,6 +58,7 @@ Function Test-log4jVulnerability {
     $yaraYar = $yaraDir + '\yara.yar'
     $outputLog = $yaraDir + '\log4jScanLogs.txt'
     $detectionLog = $yaraDir + '\DETECTION_log4jScanLogs.txt'
+    $doNotScan = $yaraDir + '\mitigatedAndScanned.txt'
 
 
     # Set the download URL of the yara zip file
@@ -102,7 +103,6 @@ Function Test-log4jVulnerability {
     }
 
 
-
     # Unzip yara
     try {
         If (!(Test-Path -Path $yaraExe)) {
@@ -132,14 +132,16 @@ Function Test-log4jVulnerability {
     }
 
 
-    # Did the user turn NOLOOKUPS (2.10+ mitigation) on?
+    # Mitigate based on user input, then set $safe if the mitigation is applied to use later in the script
     switch ($mitigationAction) {
         'Mitigate' {   
             if ([System.Environment]::GetEnvironmentVariable('LOG4J_FORMAT_MSG_NO_LOOKUPS','machine') -eq 'true') {
                 $output += "- Log4j 2.10+ exploit mitigation (LOG4J_FORMAT_MSG_NO_LOOKUPS) already set."
+                $safe = $true
             } else {
                 $output += "- Enabling Log4j 2.10+ exploit mitigation: Enable LOG4J_FORMAT_MSG_NO_LOOKUPS"
                 [Environment]::SetEnvironmentVariable("LOG4J_FORMAT_MSG_NO_LOOKUPS","true","Machine")
+                $safe = $true
             }
         }
 
@@ -147,11 +149,25 @@ Function Test-log4jVulnerability {
             $output += "- Reversing Log4j 2.10+ explot mitigation (enable LOG4J_FORMAT_MSG_NO_LOOKUPS)"
             $output += "  (NOTE: This potentially makes a secure system vulnerable again!Use with caution!)"
             [Environment]::SetEnvironmentVariable("LOG4J_FORMAT_MSG_NO_LOOKUPS","false","Machine")
+            $safe = $false
         }
 
         'None' {
+            if ([System.Environment]::GetEnvironmentVariable('LOG4J_FORMAT_MSG_NO_LOOKUPS','machine') -eq 'true') {
+                $safe = $true
+            } else {
+                $safe = $false
+            }
             $output += "- Not adjusting existing LOG4J_FORMAT_MSG_NO_LOOKUPS setting."
         }
+    }
+
+
+    # Exit script if this machine is already mitigated and scanned
+    if ($safe -and (Test-Path -Path $doNotScan -PathType Leaf)) {
+        $output += "!SUCCESS: Determined this machine has already been scannned for vulnerabilities and the mitigation was already applied, exiting script."
+        Invoke-Output $output
+        break
     }
 
 
@@ -237,9 +253,10 @@ Function Test-log4jVulnerability {
                 $output += $yaResult
                 # Write to a file
                 if (!(Test-Path $detectionLog -ErrorAction SilentlyContinue)) {
-                    Set-Content -Path $detectionLog -Value "!INFECTION DETECTION !`r`n$(Get-Date)"
+                    Set-Content -Path $detectionLog -Value "!INFECTION DETECTION!`r`n$(Get-Date)"
                     $output += "!DETECTION: See last 50 lines of output below, and see the full local output at $detectionLog"
                     $output += Get-Content -Path $detectionLog -Tail 50
+                    $exploitedStatus = $true
                 }
                 Add-Content $detectionLog -Value $yaResult
             }
@@ -265,6 +282,42 @@ Function Test-log4jVulnerability {
     $output += "mitigation and remediation recommendations from your vendors."
 
 
+    # Set final safety determination
+    switch ($safe) {
+        $true   {
+            # Set this value so we know to make the text file in the yara dir below
+            $writeScanComplete = $true
+            if (!$exploitedStatus) {
+                $safeStatus = '!SUCCESS: Safe, mitigation applied.'
+
+            } else {
+                $safeStatus = '!FAILED: Potential previous exploit detected, mitigation successfully applied.'
+            }
+        }
+
+        $false  {
+            if (!$exploitedStatus) {
+                $safeStatus = '!WARNING: Safe, but no mitigation applied'
+            } else {
+                $safeStatus = '!FAILED: Potential previous exploit detected, and mitigation failed to apply.'
+            }
+        }
+    }
+
+
+    # Create a text file in the yara dir named mitigatedAndScanned.txt which will signal our script next run
+    # that another scan of the entire system is not required.
+    If ($writeScanComplete) {
+        Set-Content -Path $doNotScan -Value "Mitigated and scanned on $(Get-Date)"
+    }
+
+
+    # Set final determination output
+    $output += "---Final Determination---"
+    $output += "[$safeStatus]"
+
+
+    # Final output
     Invoke-Output $output
     break
 }

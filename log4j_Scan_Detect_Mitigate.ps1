@@ -87,7 +87,6 @@ Function Test-log4jVulnerability {
         $output += "Successfully downloaded the yara utility"
     } catch {
         $output += "Failed to download the yara utility, exiting script. Full error output: $Error"
-        $output = $output -join "`n"
         Invoke-Output $output
         break
     }
@@ -98,7 +97,6 @@ Function Test-log4jVulnerability {
         Set-Content -Value $varYaraNew -Path $yaraYar -Force
     } catch {
         $output += "Failed to download the yara definition updates, exiting script. Full error output: $Error"
-        $output = $output -join "`n"
         Invoke-Output $output
         break
     }
@@ -113,7 +111,6 @@ Function Test-log4jVulnerability {
         }
     } catch {
         $output += "Failed to unzip yara. Full error output: $Error"
-        $output = $output -join "`n"
         Invoke-Output $output
         break
     }
@@ -133,6 +130,7 @@ Function Test-log4jVulnerability {
         $output += "- An existing DETECTION_log4jScanLogs.txt file was found. It has been renamed to:"
         $output += "$varEpoch-DETECTION_log4jScanLogs.txt"
     }
+
 
     # Did the user turn NOLOOKUPS (2.10+ mitigation) on?
     switch ($mitigationAction) {
@@ -267,6 +265,6 @@ Function Test-log4jVulnerability {
     $output += "mitigation and remediation recommendations from your vendors."
 
 
-    $output = $output -join "`n"
-    $output
+    Invoke-Output $output
+    break
 }
